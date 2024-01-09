@@ -95,7 +95,7 @@ public class IcebergNessieTableOperations
     @Override
     protected String getRefreshedLocation(boolean invalidateCaches)
     {
-        table = nessieClient.table(toIdentifier(new SchemaTableName(database, tableName)));
+        table = (IcebergTable) nessieClient.fetchContent(toIdentifier(new SchemaTableName(database, tableName)));
 
         if (table == null) {
             throw new TableNotFoundException(getSchemaTableName());
@@ -109,7 +109,8 @@ public class IcebergNessieTableOperations
     {
         verify(version.isEmpty(), "commitNewTable called on a table which already exists");
         try {
-            nessieClient.commitTable(null, metadata, writeNewMetadata(metadata, 0), table, toKey(new SchemaTableName(database, this.tableName)));
+            nessieClient.commitTable(null, metadata, writeNewMetadata(metadata, 0), table.getId(),
+                    toKey(new SchemaTableName(database, this.tableName)));
         }
         catch (NessieNotFoundException e) {
             throw new TrinoException(ICEBERG_COMMIT_ERROR, format("Cannot commit: ref '%s' no longer exists", nessieClient.refName()), e);
@@ -126,7 +127,8 @@ public class IcebergNessieTableOperations
     {
         verify(version.orElseThrow() >= 0, "commitToExistingTable called on a new table");
         try {
-            nessieClient.commitTable(base, metadata, writeNewMetadata(metadata, version.getAsInt() + 1), table, toKey(new SchemaTableName(database, this.tableName)));
+            nessieClient.commitTable(base, metadata, writeNewMetadata(metadata, version.getAsInt() + 1), table.getId(),
+                    toKey(new SchemaTableName(database, this.tableName)));
         }
         catch (NessieNotFoundException e) {
             throw new TrinoException(ICEBERG_COMMIT_ERROR, format("Cannot commit: ref '%s' no longer exists", nessieClient.refName()), e);
