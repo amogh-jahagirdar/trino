@@ -27,14 +27,76 @@ import io.trino.testing.TestingConnectorSession;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.catalog.Catalog;
+import org.apache.iceberg.catalog.Namespace;
+import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.catalog.ViewCatalog;
+import org.apache.iceberg.inmemory.InMemoryCatalog;
+import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.jdbc.JdbcCatalog;
+import org.apache.iceberg.jdbc.JdbcClientPool;
+import org.apache.iceberg.view.View;
+import org.apache.iceberg.view.ViewBuilder;
 import org.assertj.core.util.Files;
 
 import java.io.File;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 
 public final class RestCatalogTestUtils
 {
     private RestCatalogTestUtils() {}
+
+    static class TestingJdbcCatalog
+            extends JdbcCatalog implements ViewCatalog
+    {
+        InMemoryCatalog viewCatalog;
+
+        public TestingJdbcCatalog()
+        {
+            this((Function) null, (Function) null, true);
+        }
+
+        public TestingJdbcCatalog(
+                Function<Map<String, String>, FileIO> ioBuilder,
+                Function<Map<String, String>, JdbcClientPool> clientPoolBuilder,
+                boolean initializeCatalogTables)
+        {
+            super(ioBuilder, clientPoolBuilder, initializeCatalogTables);
+            this.viewCatalog = new InMemoryCatalog();
+            viewCatalog.initialize("testing-views", ImmutableMap.of());
+        }
+
+        @Override
+        public List<TableIdentifier> listViews(Namespace namespace)
+        {
+            return viewCatalog.listViews(namespace);
+        }
+
+        @Override
+        public View loadView(TableIdentifier identifier)
+        {
+            return viewCatalog.loadView(identifier);
+        }
+
+        @Override
+        public ViewBuilder buildView(TableIdentifier identifier)
+        {
+            return viewCatalog.buildView(identifier);
+        }
+
+        @Override
+        public boolean dropView(TableIdentifier identifier)
+        {
+            return viewCatalog.dropView(identifier);
+        }
+
+        @Override
+        public void renameView(TableIdentifier from, TableIdentifier to)
+        {
+            viewCatalog.renameView(from, to);
+        }
+    }
 
     public static Catalog backendCatalog(File warehouseLocation)
     {
@@ -50,7 +112,7 @@ public final class RestCatalogTestUtils
         HdfsEnvironment hdfsEnvironment = new HdfsEnvironment(hdfsConfiguration, hdfsConfig, new NoHdfsAuthentication());
         HdfsContext context = new HdfsContext(connectorSession);
 
-        JdbcCatalog catalog = new JdbcCatalog();
+        JdbcCatalog catalog = new TestingJdbcCatalog();
         catalog.setConf(hdfsEnvironment.getConfiguration(context, new Path(warehouseLocation.getAbsolutePath())));
         catalog.initialize("backend_jdbc", properties.buildOrThrow());
 
